@@ -1,0 +1,13 @@
+{
+  "folders": [
+    {
+      "path": "golden-hammer-ui"
+    },
+    {
+      "path": "golden-hammer-shared"
+    },
+    {
+      "path": "golden-hammer-services"
+    }
+  ]
+}
