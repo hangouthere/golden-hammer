@@ -9,10 +9,24 @@ dockerBuild="docker-compose down && docker-compose -f ./docker-compose.yml -f ./
 
 session="gh"
 
+SHOULD_ENTER=""
+WAIT_TIME=0
+
+while getopts ":w:" arg; do
+  case $arg in
+    w)
+      WAIT_TIME="${OPTARG}"
+      SHOULD_ENTER="C-m"
+      ;;
+    *)
+      ;;
+  esac
+done
+
 # set up tmux
 tmux start-server
 
-# == Build Window 2
+# == Build Window 1
 tmux new-session -d -s $session -n scratch
 tmux select-pane -t 0
 tmux split-window -p 90
@@ -31,7 +45,7 @@ tmux split-window -p 90
 tmux select-pane -t 0 
 tmux send-keys "$shared; $dockerBuild" C-m
 tmux select-pane -t 1
-tmux send-keys "$shared; sleep 10; docker exec -it golden-hammer-shared-golden-hammer-shared-1 npm run dev" C-m
+tmux send-keys "$shared; sleep ${WAIT_TIME}; docker exec -it golden-hammer-shared_golden-hammer-shared_1 npm run dev" $SHOULD_ENTER
 
 
 # == Build Window 3
@@ -42,8 +56,10 @@ tmux split-window -p 90
 tmux select-pane -t 0 
 tmux send-keys "$services; $dockerBuild" C-m
 tmux select-pane -t 1
-tmux send-keys "$services; sleep 20; docker attach golden-hammer-services-api-1" C-m "actions" C-m
-
+tmux send-keys "$services; sleep ${WAIT_TIME}; docker attach golden-hammer-services_api_1 " $SHOULD_ENTER
+if [ ! -z "${WAIT_TIME}" ]; then
+    tmux send-keys "sleep ${WAIT_TIME}; actions" $SHOULD_ENTER
+fi
 
 # == Build Window 4
 tmux new-window -t $session:4 -n gh-ui
@@ -53,7 +69,7 @@ tmux split-window -p 90
 tmux select-pane -t 0 
 tmux send-keys "$ui; $dockerBuild" C-m
 tmux select-pane -t 1
-tmux send-keys "$ui; sleep 10; docker exec -it golden-hammer-ui-golden-hammer-ui-1 npm run dev" C-m
+tmux send-keys "$ui; sleep ${WAIT_TIME}; docker exec -it golden-hammer-ui_golden-hammer-ui_1 npm run dev" $SHOULD_ENTER
 
 
 
