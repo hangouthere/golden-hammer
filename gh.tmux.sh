@@ -66,7 +66,7 @@ launchTmux() {
   tmux select-pane -t 0
   tmux send-keys "$figletHeader" C-m
   tmux select-pane -t 1
-  tmux send-keys "docker stats" C-m
+  tmux send-keys "code ./GoldenHammer.code-workspace && docker stats" C-m
 
   # == Build Window 2
   openWindow 2 gh-shared
@@ -80,7 +80,7 @@ launchTmux() {
   # Exec Pane Commands 
   tmux send-keys "$services; $dockerBuild" C-m
   tmux select-pane -t 1
-  tmux send-keys "$services; sleep ${WAIT_TIME}; docker attach golden-hammer-services_api_1 " $SHOULD_ENTER
+  tmux send-keys "$services; sleep ${WAIT_TIME}; docker attach golden-hammer-services_api_1 & " $SHOULD_ENTER
   if [ ! -z "${WAIT_TIME}" ]; then
       tmux send-keys "sleep ${WAIT_TIME}; actions" $SHOULD_ENTER
   fi
@@ -100,6 +100,8 @@ launchTmux() {
 }
 
 while getopts ":w:s:u" arg; do
+  echo "Argument: $arg == $OPTARG"
+
   case $arg in
     s)
       setBranch $OPTARG
@@ -110,8 +112,17 @@ while getopts ":w:s:u" arg; do
     w)
       WAIT_TIME="${OPTARG}"
       SHOULD_ENTER="C-m"
+
+     launchTmux
       ;;
     *)
+    launchTmux
+
       ;;
   esac
+
+  exit 0
 done
+
+# No args met
+launchTmux

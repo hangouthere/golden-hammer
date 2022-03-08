@@ -9,5 +9,9 @@
     {
       "path": "golden-hammer-services"
     }
-  ]
+  ],
+  "settings": {
+    "liveServer.settings.multiRootWorkspaceName": "golden-hammer-services"
+  }
 }
+
