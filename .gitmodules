@@ -1,0 +1,9 @@
+[submodule "golden-hammer-services"]
+	path = golden-hammer-services
+	url = git@github.com:nerdfoundry/golden-hammer-services.git
+[submodule "golden-hammer-shared"]
+	path = golden-hammer-shared
+	url = git@github.com:nerdfoundry/golden-hammer-shared.git
+[submodule "golden-hammer-ui"]
+	path = golden-hammer-ui
+	url = git@github.com:nerdfoundry/golden-hammer-ui.git
