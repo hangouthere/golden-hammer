@@ -5,7 +5,7 @@ services="cd golden-hammer-services"
 ui="cd golden-hammer-ui"
 
 figletHeader="figlet -f 3d -w $(tput cols) \"Golden  Hammer\""
-dockerBuild="docker-compose down && docker-compose -f ./docker-compose.yml -f ./docker-compose.dev.yml up --build"
+dockerBuild="docker-compose down; docker-compose -f ./docker-compose.yml -f ./docker-compose.dev.yml up --build"
 
 session="gh"
 dirNames="golden-hammer-*/"
@@ -61,7 +61,7 @@ launchTmux() {
 
   # == Build Window 1
   tmux select-pane -t 0
-  tmux split-window -p 90
+  tmux split-window -p 80
   # Exec Pane Commands 
   tmux select-pane -t 0
   tmux send-keys "$figletHeader" C-m
@@ -80,10 +80,7 @@ launchTmux() {
   # Exec Pane Commands 
   tmux send-keys "$services; $dockerBuild" C-m
   tmux select-pane -t 1
-  tmux send-keys "$services; sleep ${WAIT_TIME}; docker attach golden-hammer-services_api_1 & " $SHOULD_ENTER
-  if [ ! -z "${WAIT_TIME}" ]; then
-      tmux send-keys "sleep ${WAIT_TIME}; actions" $SHOULD_ENTER
-  fi
+  tmux send-keys "$services; sleep ${WAIT_TIME}; docker attach golden-hammer-services_api_1" $SHOULD_ENTER
 
   # == Build Window 4
   openWindow 4 gh-ui
@@ -91,6 +88,13 @@ launchTmux() {
   tmux send-keys "$ui; $dockerBuild" C-m
   tmux select-pane -t 1
   tmux send-keys "$ui; sleep ${WAIT_TIME}; docker exec -it golden-hammer-ui_golden-hammer-ui_1 npm run dev" $SHOULD_ENTER
+
+  # == Build Window 5
+  openWindow 5 "Tests: gh-services"
+  # Exec Pane Commands 
+  tmux send-keys "$services;" C-m
+  tmux select-pane -t 1
+  tmux send-keys "$services; sleep ${WAIT_TIME}; docker attach golden-hammer-services_test_1" $SHOULD_ENTER
 
   # return to main window
   tmux select-window -t $session:1
