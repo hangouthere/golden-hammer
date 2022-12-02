@@ -1,28 +1,28 @@
 #!/bin/sh
-
+util="cd ../../general/nfg-util"
 shared="cd golden-hammer-shared"
 services="cd golden-hammer-services"
 ui="cd golden-hammer-ui"
 
-figletHeader="figlet -f 3d -w $(tput cols) \"Golden  Hammer\""
-dockerBuild="docker-compose down; docker-compose -f ./docker-compose.yml -f ./docker-compose.dev.yml up --build"
-
 session="gh"
-dirNames="golden-hammer-*/"
 
-SHOULD_ENTER=""
+SHOULD_PRESS_ENTER=""
+SHOULD_LINK=""
 WAIT_TIME=0
+DEV_TYPE="dev"
+winNum=1
 
 showHelp() {
   figlet -f 3d -w $(tput cols) Golden  Hammer Helper
 
-  __usage="
+  usage="
     A simple helper script to perform actions on all projects, or start a tmux session for the projects.
 
     Usage: $(basename $0) [OPTIONS]
 
     Without any options, a tmux session will be created if necessary.
 
+    -l              : Set up the environment to include linking the nfg-util project
     -w <numSeconds> : Wait <numSeconds> before continuing startup of environment.
                       This is useful for initial builds that can take a long while.
                       This *will* create the tmux session if necessary!
@@ -31,11 +31,13 @@ showHelp() {
     -h              : This help screen.
   "
 
-  echo "$__usage"
+  echo "$usage"
 }
 
 setBranch() {
   echo "Setting Branch for Projects..."
+
+  dirNames="golden-hammer-*/"
 
   for dir in $dirNames; do
     [ -L "${dir%/}" ] && continue
@@ -64,7 +66,7 @@ updateProjects() {
   done
 
   exit
-} 
+}
 
 createOrJoinSession() {
   tmux has-session -t $session 2> /dev/null
@@ -92,52 +94,59 @@ joinSession() {
   fi
 }
 
+openWindow() {
+  winNum=$((winNum+1)) 
+  winName=$1
+
+  tmux new-window -t $session:$winNum -n $winName
+  tmux split-window -t $session:$winNum.0 -p 10
+}
+
 startProject() {
-  winNum=$1
-  cmdChDir="$2"
-  ctrName="$3"
+  cmdChDir="$1"
+  ctrName="$2"
 
   tmux send-keys -t $session:$winNum.0 "$cmdChDir; $dockerBuild" C-m
-  tmux send-keys -t $session:$winNum.1 "$cmdChDir; sleep ${WAIT_TIME}; docker exec -it $ctrName npm run dev" $SHOULD_ENTER
+  tmux send-keys -t $session:$winNum.1 "$cmdChDir; sleep ${WAIT_TIME}; docker exec -it $ctrName npm run dev" $SHOULD_PRESS_ENTER
   tmux select-pane -t $session:$winNum.1
 }
 
-openWindow() {
-  winNum=$1
-  winName=$2
-
-  tmux new-window -t $session:$winNum -n $winName
-  tmux split-window -t $session:$winNum.0 -p 90
-}
-
 createSession() {
+  dockerBuild="docker-compose down; docker-compose -f ./docker-compose.yml -f ./docker-compose.$DEV_TYPE.yml up --build"
+  figletHeader="figlet -f 3d -w $(tput cols) \"Golden  Hammer\""
+
   tmux start-server
   tmux new-session -d -s $session -n "Golden Hammer"
 
-  # == Build Window 1
+  # == Stats
   tmux split-window -t $session:1.0 -p 80
   tmux send-keys -t $session:1.0 "$figletHeader" C-m
   tmux send-keys -t $session:1.1 "code ./GoldenHammer.code-workspace && docker stats" C-m
   tmux select-pane -t $session:1.1
 
-  # == Build Window 2
-  openWindow 2 gh-shared
-  startProject 2 "$shared" golden-hammer-shared_golden-hammer-shared_1
+  # == nfg-util linking
+  if [ -n $SHOULD_LINK ]; then
+    openWindow nfg-util
+    startProject "$util" nfg-util
+  fi
 
-  # == Build Window 3
-  openWindow 3 gh-services
-  tmux send-keys -t $session:3.0 "$services; $dockerBuild" C-m
-  tmux send-keys -t $session:3.1 "$services; sleep ${WAIT_TIME}; docker attach golden-hammer-services_api_1" $SHOULD_ENTER
-  tmux select-pane -t $session:3.1
+  # == gh-shared
+  openWindow gh-shared
+  startProject "$shared" golden-hammer-shared_golden-hammer-shared_1
 
-  # == Build Window 4
-  openWindow 4 gh-ui
-  startProject 4 "$ui" golden-hammer-ui_golden-hammer-ui_1
+  # == gh-services
+  openWindow gh-services
+  tmux send-keys -t $session:$winNum.0 "$services; $dockerBuild" C-m
+  tmux send-keys -t $session:$winNum.1 "$services; sleep ${WAIT_TIME}; docker attach golden-hammer-services_api_1" $SHOULD_PRESS_ENTER
+  tmux select-pane -t $session:$winNum.1
 
-  # # == Build Window 5
-  # openWindow 5 "Tests: gh-services"
-  # # Exec Pane Commands 
-  # tmux send-keys "$services; sleep ${WAIT_TIME}; docker attach golden-hammer-services_test_1" $SHOULD_ENTER
+  # == gh-ui
+  openWindow gh-ui
+  startProject "$ui" golden-hammer-ui_golden-hammer-ui_1
+
+  # # == gh-services Tests
+  # openWindow "Tests: gh-services"
+  # tmux send-keys "$services; sleep ${WAIT_TIME}; docker attach golden-hammer-services_test_1" $SHOULD_PRESS_ENTER
 
   # return to main window
   tmux select-window -t $session:1.1
@@ -146,37 +155,41 @@ createSession() {
 }
 
 start() {
-  while getopts "hw:s:u" arg; do
-    echo "Argument: $arg == $OPTARG"
+  DONT_START=""
+
+  while getopts ":hlw:s:u" arg; do
+    # echo "Argument: $arg == $OPTARG"
 
     case $arg in
       h)
         clear
         showHelp
+        DONT_START="1"
+        ;;
+      l)
+        SHOULD_LINK="1"
+        DEV_TYPE="dev_linked"
         ;; 
       s)
         setBranch $OPTARG
-        ;; 
+        DONT_START="1"
+        ;;
       u)
         updateProjects
+        DONT_START="1"
         ;;
       w)
         WAIT_TIME="${OPTARG}"
-        SHOULD_ENTER="C-m"
-
-        createOrJoinSession
-        ;;
-      *)
-      createOrJoinSession
-
+        SHOULD_PRESS_ENTER="C-m"
         ;;
     esac
-
-    exit 0
   done
 
-  # No args met
+  if [ -n "$DONT_START" ]; then
+    exit 0
+  fi
+
   createOrJoinSession
 }
 
-start
+start "$@"
