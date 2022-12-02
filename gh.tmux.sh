@@ -66,73 +66,73 @@ updateProjects() {
   exit
 } 
 
-openWindow() {
-  tmux new-window -t $session:$1 -n $2
-  tmux select-pane -t 0 
-  tmux split-window -p 90
-  tmux select-pane -t 0 
-}
-
 createOrJoinSession() {
-  tmux has-session -t $session
+  tmux has-session -t $session 2> /dev/null
+  missingSession="$?"
 
-  if [ "1" = "$?" ]; then
+  if [ "1" = "$missingSession" ]; then
+    echo "Creating new: $session"
     createSession
   else
-    # Not in TMUX, so we can attach
-    if [ -z "$TMUX" ]; then
-      echo "Joining existing session: $session"
-      tmux attach -t $session
-    else
-      # Inside TMUX, so we need to switch
-      echo "Switching to existing session: $session"
-      tmux switch-client -t $session
-    fi
+    echo "Session found: $session"
+    joinSession
+  fi
+}
 
+joinSession() {
+  # Not in TMUX, so we can attach
+  if [ -z "$TMUX" ]; then
+    echo "Joining Session: $session"
+    tmux attach -t $session
+  else
+    # Inside TMUX, so we need to switch
+    echo "Switching to Session: $session"
+    tmux switch-client -t $session
+    # tmux switch-client -n
   fi
 }
 
 startProject() {
-  cmdChDir="$1"
-  containerName="$2"
+  winNum=$1
+  cmdChDir="$2"
+  ctrName="$3"
 
-  tmux send-keys "$cmdChDir; $dockerBuild" C-m
-  tmux select-pane -t 1
-  tmux send-keys "$cmdChDir; sleep ${WAIT_TIME}; docker exec -it $containerName npm run dev" $SHOULD_ENTER
+  tmux send-keys -t $session:$winNum.0 "$cmdChDir; $dockerBuild" C-m
+  tmux send-keys -t $session:$winNum.1 "$cmdChDir; sleep ${WAIT_TIME}; docker exec -it $ctrName npm run dev" $SHOULD_ENTER
+  tmux select-pane -t $session:$winNum.1
 }
 
+openWindow() {
+  winNum=$1
+  winName=$2
+
+  tmux new-window -t $session:$winNum -n $winName
+  tmux split-window -t $session:$winNum.0 -p 90
+}
 
 createSession() {
-  # set up tmux
   tmux start-server
-
-  tmux new-session -d -s $session -n scratch
+  tmux new-session -d -s $session -n "Golden Hammer"
 
   # == Build Window 1
-  tmux select-pane -t 0
-  tmux split-window -p 80
-  # Exec Pane Commands 
-  tmux select-pane -t 0
-  tmux send-keys "$figletHeader" C-m
-  tmux select-pane -t 1
-  tmux send-keys "code ./GoldenHammer.code-workspace && docker stats" C-m
+  tmux split-window -t $session:1.0 -p 80
+  tmux send-keys -t $session:1.0 "$figletHeader" C-m
+  tmux send-keys -t $session:1.1 "code ./GoldenHammer.code-workspace && docker stats" C-m
+  tmux select-pane -t $session:1.1
 
   # == Build Window 2
   openWindow 2 gh-shared
-  startProject "$shared" golden-hammer-shared_golden-hammer-shared_1
+  startProject 2 "$shared" golden-hammer-shared_golden-hammer-shared_1
 
   # == Build Window 3
   openWindow 3 gh-services
-  # Exec Pane Commands 
-  tmux send-keys "$services; $dockerBuild" C-m
-  tmux select-pane -t 1
-  tmux send-keys "$services; sleep ${WAIT_TIME}; docker attach golden-hammer-services_api_1" $SHOULD_ENTER
+  tmux send-keys -t $session:3.0 "$services; $dockerBuild" C-m
+  tmux send-keys -t $session:3.1 "$services; sleep ${WAIT_TIME}; docker attach golden-hammer-services_api_1" $SHOULD_ENTER
+  tmux select-pane -t $session:3.1
 
   # == Build Window 4
   openWindow 4 gh-ui
-  # Exec Pane Commands 
-  tmux send-keys "$ui; $dockerBuild" C-m
-  startProject "$ui" golden-hammer-ui_golden-hammer-ui_1
+  startProject 4 "$ui" golden-hammer-ui_golden-hammer-ui_1
 
   # # == Build Window 5
   # openWindow 5 "Tests: gh-services"
@@ -140,40 +140,43 @@ createSession() {
   # tmux send-keys "$services; sleep ${WAIT_TIME}; docker attach golden-hammer-services_test_1" $SHOULD_ENTER
 
   # return to main window
-  tmux select-window -t $session:1
+  tmux select-window -t $session:1.1
 
-  # Finished setup, attach to the tmux session!
-  tmux attach-session -t $session
+  joinSession
 }
 
-while getopts "hw:s:u" arg; do
-  echo "Argument: $arg == $OPTARG"
+start() {
+  while getopts "hw:s:u" arg; do
+    echo "Argument: $arg == $OPTARG"
 
-  case $arg in
-    h)
-      clear
-      showHelp
-      ;; 
-    s)
-      setBranch $OPTARG
-      ;; 
-    u)
-      updateProjects
-      ;;
-    w)
-      WAIT_TIME="${OPTARG}"
-      SHOULD_ENTER="C-m"
+    case $arg in
+      h)
+        clear
+        showHelp
+        ;; 
+      s)
+        setBranch $OPTARG
+        ;; 
+      u)
+        updateProjects
+        ;;
+      w)
+        WAIT_TIME="${OPTARG}"
+        SHOULD_ENTER="C-m"
 
+        createOrJoinSession
+        ;;
+      *)
       createOrJoinSession
-      ;;
-    *)
-    createOrJoinSession
 
-      ;;
-  esac
+        ;;
+    esac
 
-  exit 0
-done
+    exit 0
+  done
 
-# No args met
-createOrJoinSession
+  # No args met
+  createOrJoinSession
+}
+
+start
