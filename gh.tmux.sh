@@ -7,11 +7,12 @@ ui="cd golden-hammer-ui"
 session="golden-hammer"
 projectDirNames="golden-hammer-*/"
 
-SHOULD_PRESS_ENTER=""
-SHOULD_LINK=""
-SHOULD_DELETE_CACHE=""
-WAIT_TIME=0
-DEV_TYPE="dev"
+shouldAutoEnter=""
+shouldLink=""
+shouldDeleteCache=""
+waitTime=1
+devType="dev"
+figletHeader="figlet -f 3d -w $(tput cols) \"GoldenHammer\""
 winNum=1
 
 showHelp() {
@@ -32,6 +33,7 @@ showHelp() {
                       switching between linked and non-linked environments, to avoid
                       network failures when npm inevitibly times out trying to
                       reach the private registry.
+    -x              : Exit and destroy the environment, including the tmux session.
     -w <numSeconds> : Wait <numSeconds> before continuing startup of environment.
                       This is useful for initial builds that can take a long while.
                       This *will* create the tmux session if necessary!
@@ -51,11 +53,9 @@ setBranch() {
     echo "  ⚙️ Setting '$dir' to $1"
 
     cd $dir
-    git checkout -b $1 2>&1 /dev/null
+    git checkout -b $1 2>&1 > /dev/null
     cd ..
   done
-
-  exit
 }
 
 updateProjects() {
@@ -70,8 +70,6 @@ updateProjects() {
     git pull
     cd ..
   done
-
-  exit
 }
 
 deletePackageCache() {
@@ -116,42 +114,45 @@ joinSession() {
 
 openWindow() {
   winNum=$((winNum+1))
-  winName=$1
+  local winName=$1
 
   tmux new-window -t $session:$winNum -n $winName
   tmux split-window -t $session:$winNum.0 -p 10
 }
 
 startProject() {
-  cmdChDir="$1"
-  ctrName="$2"
+  local cmdChDir="$1"
+  local ctrName="$2"
 
   tmux send-keys -t $session:$winNum.0 " $cmdChDir; $dockerBuild" Enter
-  # tmux send-keys -t $session:$winNum.1 " $cmdChDir; sleep ${WAIT_TIME}; docker exec -it $ctrName npm run dev" $SHOULD_PRESS_ENTER
-  tmux send-keys -t $session:$winNum.1 " $cmdChDir && clear" Enter
+  tmux send-keys -t $session:$winNum.1 " $cmdChDir; sleep $waitTime; docker exec -it $ctrName ash" Enter
   tmux select-pane -t $session:$winNum.1
 }
 
+stopProject() {
+  local cmdChDir="$1"
+  winNum=$((winNum+1))
+
+  tmux send-keys -t $session:$winNum.0 C-c
+  tmux send-keys -t $session:$winNum.0 " $cmdChDir; $dockerStop; tmux kill-window -t $winNum" Enter
+}
+
 createSession() {
-  dockerBuild="docker-compose down; docker-compose -f ./docker-compose.yml -f ./docker-compose.$DEV_TYPE.yml up --build"
-  figletHeader="figlet -f 3d -w $(tput cols) \"GoldenHammer\""
+  local outMsg="$figletHeader"
+  local subMsg=""
 
-  outMsg="$figletHeader"
-  subMsg=""
-
-  tmux start-server
   tmux new-session -d -s $session -n "GoldenHammer"
 
   # == Stats
-  if [ -n "$SHOULD_DELETE_CACHE" ]; then
+  if [ -n "$shouldDeleteCache" ]; then
     deletePackageCache
     subMsg="  ✅ Deleted Cache Files"
   fi
-  if [ -n "$SHOULD_LINK" ]; then
+  if [ -n "$shouldLink" ]; then
     subMsg="$subMsg\n  ✅ Linked nfg-util"
   fi
-  if [ "0" != "$WAIT_TIME" ]; then
-    subMsg="$subMsg\n  ✅ Waiting ${WAIT_TIME}s before starting projects"
+  if [ "0" != "$waitTime" ]; then
+    subMsg="$subMsg\n  ✅ Waiting ${waitTime}s before starting projects"
   fi
   tmux split-window -t $session:1.0 -p 70
   tmux send-keys -t $session:1.1 " code ./GoldenHammer.code-workspace & docker stats" Enter
@@ -164,10 +165,10 @@ createSession() {
   tmux send-keys -t $session:1.0 Enter
 
   # == nfg-util linking
-  if [ -n $SHOULD_LINK ]; then
+  if [ -n $shouldLink ]; then
     openWindow nfg-util
-    startProject "$util" nfg-util
-    sleep 5 # wait a tiny bit for registry to come up
+    # wait a tiny bit for registry to come up
+    startProject "$util && sleep 5" nfg-util
   fi
 
   # == gh-shared
@@ -177,9 +178,6 @@ createSession() {
   # == gh-services
   openWindow gh-services
   startProject "$services" golden-hammer-services_api_1
-  # tmux send-keys -t $session:$winNum.0 " $services; $dockerBuild" Enter
-  # tmux send-keys -t $session:$winNum.1 " $services; sleep ${WAIT_TIME}; docker attach golden-hammer-services_api_1" $SHOULD_PRESS_ENTER
-  # tmux select-pane -t $session:$winNum.1
 
   # == gh-ui
   openWindow gh-ui
@@ -187,44 +185,67 @@ createSession() {
 
   # # == gh-services Tests
   # openWindow "Tests: gh-services"
-  # tmux send-keys " $services; sleep ${WAIT_TIME}; docker attach golden-hammer-services_test_1" $SHOULD_PRESS_ENTER
+  # tmux send-keys " $services; sleep ${waitTime}; docker attach golden-hammer-services_test_1" $shouldAutoEnter
 
   # return to main window
-  tmux select-window -t $session:1.1
+  tmux select-window -t $session:1.0
 
   joinSession
 }
 
-start() {
-  DONT_START=""
+destroySession() {
+  winNum=1
 
-  while getopts "hldw:s:u" arg; do
+  tmux select-window -t $session:1
+
+  if [ -n $shouldLink ]; then
+    stopProject "$util"
+  fi
+
+  stopProject "$shared"
+  stopProject "$services"
+  stopProject "$ui"
+
+  # Close first panel
+  tmux send-keys -t $session:1.0 C-c
+  tmux send-keys -t $session:1.0 " tmux kill-window -t 1" Enter
+}
+
+start() {
+  local DONT_START=""
+  local SHUTDOWN=""
+
+  tmux start-server
+
+  while getopts "hldxw:s:u" arg; do
     # echo "Argument: $arg == $OPTARG"
 
     case $arg in
       h)
+        DONT_START="1"
         clear
         showHelp
-        DONT_START="1"
         ;;
       l)
-        SHOULD_LINK="1"
-        DEV_TYPE="dev_linked"
+        shouldLink="1"
+        devType="dev_linked"
         ;;
       d)
-        SHOULD_DELETE_CACHE="1"
+        shouldDeleteCache="1"
         ;;
       w)
-        WAIT_TIME="${OPTARG}"
-        SHOULD_PRESS_ENTER="Enter"
+        waitTime="${OPTARG}"
+        ;;
+      x)
+        SHUTDOWN="1"
         ;;
       s)
-        setBranch $OPTARG
         DONT_START="1"
+        setBranch $OPTARG
         ;;
       u)
-        updateProjects
         DONT_START="1"
+        updateProjects
         ;;
     esac
   done
@@ -233,7 +254,15 @@ start() {
     exit 0
   fi
 
-  createOrJoinSession
+  dockerCmdBase="docker-compose -f ./docker-compose.yml -f ./docker-compose.$devType.yml"
+  dockerBuild="$dockerCmdBase down; $dockerCmdBase up --build"
+  dockerStop="$dockerCmdBase down"
+
+  if [ -z "$SHUTDOWN" ]; then
+    createOrJoinSession
+  else
+    destroySession
+  fi
 }
 
 start "$@"

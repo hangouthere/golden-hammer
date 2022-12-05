@@ -11,5 +11,11 @@ Both these setups use npm registry reinstall, but triggered on vol mounts via no
 
 ## Setup
 
+### File System Watch
+
+https://www.suse.com/support/kb/doc/?id=000020048
+
+
 Need to establish symlinks when working in "linked mode"
+
 
