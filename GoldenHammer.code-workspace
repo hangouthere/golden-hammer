@@ -1,17 +1,53 @@
 {
   "folders": [
     {
-      "path": "golden-hammer-ui"
+      "name": "hh-util",
+      "path": "../../general/hh-util"
     },
     {
+      "name": "golden-hammer",
+      "path": "."
+    },
+    {
+      "name": "golden-hammer-shared",
       "path": "golden-hammer-shared"
     },
     {
+      "name": "golden-hammer-services",
       "path": "golden-hammer-services"
+    },
+    {
+      "name": "golden-hammer-ui",
+      "path": "golden-hammer-ui"
     }
   ],
   "settings": {
-    "liveServer.settings.multiRootWorkspaceName": "golden-hammer-services"
+    "liveServer.settings.multiRootWorkspaceName": "golden-hammer",
+    "httpyac.environmentVariables": {
+
+      "$shared": {},
+
+      "localdev": {
+        "ip_apiGateway": "localhost:3000"
+      }
+    },
+    "httpyac.environmentShowStatusBarItem": true,
+    "httpyac.codelens": {
+      "resetEnvironment": true,
+      "showVariables": true
+    },
+    "files.exclude": {
+      "**/.git": true,
+      "**/.svn": true,
+      "**/.hg": true,
+      "**/CVS": true,
+      "**/.DS_Store": true,
+      "**/Thumbs.db": true,
+      ".parcel-*": true,
+      "golden-hammer-services": true,
+      "golden-hammer-shared": true,
+      "golden-hammer-ui": true
+    },
+    "explorerExclude.backup": {}
   }
 }
-

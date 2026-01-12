@@ -1,5 +1,10 @@
 #!/bin/sh
-util="cd ../../general/nfg-util"
+
+# shellcheck disable=SC3043
+# https://www.shellcheck.net/wiki/SC3043
+
+utilName="hh-util"
+util="cd ../../general/$utilName"
 shared="cd golden-hammer-shared"
 services="cd golden-hammer-services"
 ui="cd golden-hammer-ui"
@@ -7,28 +12,27 @@ ui="cd golden-hammer-ui"
 session="golden-hammer"
 projectDirNames="golden-hammer-*/"
 
-shouldAutoEnter=""
 shouldLink=""
 shouldDeleteCache=""
-waitTime=1
-devType="dev"
+waitTime=3
 figletHeader="figlet -f 3d -w $(tput cols) \"GoldenHammer\""
 winNum=1
 
 showHelp() {
-  figlet -f 3d -w $(tput cols) "GoldenHammer"
-  figlet -f small -w $(tput cols) "Project Helper"
+  printf "\n"
+  figlet -f 3d -w "$(tput cols)" " GoldenHammer"
+  figlet -f small -w "$(tput cols)" "            > Project Helper"
 
   usage="
     This is a helper script to perform various github actions on all projects, clean up stale cache,
     or start/resume a tmux session for the projects. It even includes a way to link the utility project!
 
-    Usage: $(basename $0) [OPTIONS]
+    Usage: $(basename "$0") [OPTIONS]
 
     Without any options, a tmux session will be created if necessary.
 
     -h              : This help screen.
-    -l              : Set up the environment to include linking the nfg-util project
+    -l              : Set up the environment to include linking the hh-util project
     -d              : Deletes package-lock.json and node_modules. Highly useful when
                       switching between linked and non-linked environments, to avoid
                       network failures when npm inevitibly times out trying to
@@ -50,11 +54,11 @@ setBranch() {
   for dir in $projectDirNames; do
     [ -L "${dir%/}" ] && continue
 
-    echo "  ⚙️ Setting '$dir' to $1"
-
-    cd $dir
-    git checkout -b $1 2>&1 > /dev/null
-    cd ..
+    (
+      echo "  ⚙️  Setting '$dir' to $1"
+      cd "$dir" || exit
+      git checkout -b "$1" > /dev/null 2>&1
+    )
   done
 }
 
@@ -64,11 +68,11 @@ updateProjects() {
   for dir in $projectDirNames; do
     [ -L "${dir%/}" ] && continue
 
-    echo "  ⤴️ Updating '$dir' from $(git remote -vv | grep fetch)"
-
-    cd $dir
-    git pull
-    cd ..
+    (
+      echo "  ⤴️ Updating '$dir' from $(git remote -vv | grep fetch)"
+      cd "$dir" || exit
+      git pull
+    )
   done
 }
 
@@ -78,11 +82,11 @@ deletePackageCache() {
   for dir in $projectDirNames; do
     [ -L "${dir%/}" ] && continue
 
-    echo "  ❌ Purging '$dir'"
-
-    cd $dir
-    rm -rf node_modules package-lock.json
-    cd ..
+    (
+      echo "  ❌ Purging '$dir'"
+      cd "$dir" || exit
+      rm -rf node_modules package-lock.json
+    )
   done
 }
 
@@ -114,27 +118,43 @@ joinSession() {
 
 openWindow() {
   winNum=$((winNum+1))
-  local winName=$1
+  local winName="$1"
 
-  tmux new-window -t $session:$winNum -n $winName
+  tmux new-window -t $session:$winNum -n "$winName"
   tmux split-window -t $session:$winNum.0 -p 10
+
+  sleep 2
 }
 
 startProject() {
   local cmdChDir="$1"
   local ctrName="$2"
+  local cmdStart=""
 
-  tmux send-keys -t $session:$winNum.0 " $cmdChDir; $dockerBuild" Enter
+  if [ "$utilName" = "$ctrName" ]; then
+    cmdStart=$cmdProjectStartHH
+  else
+    cmdStart=$cmdProjectStart
+  fi
+
+  tmux send-keys -t $session:$winNum.0 " $cmdChDir; $cmdStart" Enter
   tmux send-keys -t $session:$winNum.1 " $cmdChDir; sleep $waitTime; docker exec -it $ctrName ash" Enter
   tmux select-pane -t $session:$winNum.1
 }
 
 stopProject() {
   local cmdChDir="$1"
+  local cmdStart=""
   winNum=$((winNum+1))
 
+  if [ "$utilName" = "$ctrName" ]; then
+    cmdStop=$cmdProjectStopHH
+  else
+    cmdStop=$cmdProjectStop
+  fi
+
   tmux send-keys -t $session:$winNum.0 C-c
-  tmux send-keys -t $session:$winNum.0 " $cmdChDir; $dockerStop; tmux kill-window -t $winNum" Enter
+  tmux send-keys -t $session:$winNum.0 " $cmdChDir; $cmdStop; tmux kill-window -t $winNum" Enter
 }
 
 createSession() {
@@ -148,40 +168,44 @@ createSession() {
     deletePackageCache
     subMsg="  ✅ Deleted Cache Files"
   fi
+
   if [ -n "$shouldLink" ]; then
-    subMsg="$subMsg\n  ✅ Linked nfg-util"
+    subMsg="$subMsg\n  ✅ Linked $utilName"
   fi
+
   if [ "0" != "$waitTime" ]; then
     subMsg="$subMsg\n  ✅ Waiting ${waitTime}s before starting projects"
   fi
+
   tmux split-window -t $session:1.0 -p 70
   tmux send-keys -t $session:1.1 " code ./GoldenHammer.code-workspace & docker stats" Enter
-  tmux select-pane -t $session:1.1
   tmux send-keys -t $session:1.0 " clear && $outMsg"
+  tmux select-pane -t $session:1.1
+
   if [ -n "$subMsg" ]; then
     tmux send-keys -t $session:1.0 " && echo '\n\n$subMsg'"
   fi
 
   tmux send-keys -t $session:1.0 Enter
 
-  # == nfg-util linking
-  if [ -n $shouldLink ]; then
-    openWindow nfg-util
+  # == util linking
+  if [ -n "$shouldLink" ]; then
+    openWindow $utilName
     # wait a tiny bit for registry to come up
-    startProject "$util && sleep 5" nfg-util
+    startProject "$util && sleep 5" $utilName
   fi
 
   # == gh-shared
   openWindow gh-shared
-  startProject "$shared" golden-hammer-shared_golden-hammer-shared_1
+  startProject "$shared" gh-shared
 
   # == gh-services
   openWindow gh-services
-  startProject "$services" golden-hammer-services_api_1
+  startProject "$services" gh-api
 
   # == gh-ui
   openWindow gh-ui
-  startProject "$ui" golden-hammer-ui_golden-hammer-ui_1
+  startProject "$ui" gh-ui
 
   # # == gh-services Tests
   # openWindow "Tests: gh-services"
@@ -198,7 +222,7 @@ destroySession() {
 
   tmux select-window -t $session:1
 
-  if [ -n $shouldLink ]; then
+  if [ -n "$shouldLink" ]; then
     stopProject "$util"
   fi
 
@@ -214,6 +238,7 @@ destroySession() {
 start() {
   local DONT_START=""
   local SHUTDOWN=""
+  local devType="dev"
 
   tmux start-server
 
@@ -221,14 +246,9 @@ start() {
     # echo "Argument: $arg == $OPTARG"
 
     case $arg in
-      h)
-        DONT_START="1"
-        clear
-        showHelp
-        ;;
       l)
         shouldLink="1"
-        devType="dev_linked"
+        devType="dev-linked"
         ;;
       d)
         shouldDeleteCache="1"
@@ -241,11 +261,16 @@ start() {
         ;;
       s)
         DONT_START="1"
-        setBranch $OPTARG
+        setBranch "$OPTARG"
         ;;
       u)
         DONT_START="1"
         updateProjects
+        ;;
+      *)
+        DONT_START="1"
+        clear
+        showHelp
         ;;
     esac
   done
@@ -254,9 +279,11 @@ start() {
     exit 0
   fi
 
-  dockerCmdBase="docker-compose -f ./docker-compose.yml -f ./docker-compose.$devType.yml"
-  dockerBuild="$dockerCmdBase down; $dockerCmdBase up --build"
-  dockerStop="$dockerCmdBase down"
+  # util project starts a little differently since it's the underlying source for other projects' scripts
+  cmdProjectStartHH="./.scripts/compose/$devType.sh"
+  cmdProjectStopHH="./.scripts/compose/down.sh"
+  cmdProjectStart="./node_modules/.bin/hh-compose-$devType"
+  cmdProjectStop="./node_modules/.bin/hh-compose-down"
 
   if [ -z "$SHUTDOWN" ]; then
     createOrJoinSession
